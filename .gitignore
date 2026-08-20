@@ -1,0 +1,75 @@
+# ==============================================================
+# Python / Backend
+# ==============================================================
+__pycache__/
+*.py[codz]
+*.so
+build/
+dist/
+backend/lib/
+backend/lib64/
+*.egg-info/
+*.egg
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.hypothesis/
+
+# Logs y DB local
+*.log
+db.sqlite3
+db.sqlite3-journal
+
+# mypy / ruff
+.mypy_cache/
+.ruff_cache/
+
+# ==============================================================
+# Node / Frontend
+# ==============================================================
+node_modules/
+dist/
+.vite/
+*.local
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+*.tsbuildinfo
+
+# ==============================================================
+# Variables de entorno
+# ==============================================================
+.env
+.envrc
+.env.*
+!.env.example
+
+# ==============================================================
+# Entornos virtuales de Python
+# ==============================================================
+.venv
+env/
+venv/
+
+# ==============================================================
+# Sistema operativo
+# ==============================================================
+.DS_Store
+Thumbs.db
+
+# ==============================================================
+# Editores
+# ==============================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ==============================================================
+# Claude Code (overrides personales, nunca compartidos)
+# ==============================================================
+.claude/settings.local.json

@@ -1,0 +1,63 @@
+name: CodeQL
+
+# Advanced setup — a workflow file — rather than the one-click default setup in
+# the repository settings. Default setup lives in the repo's configuration, so it
+# does not travel: an app generated from this template would silently start life
+# without any static analysis. This file is versioned, reviewed and inherited.
+# Same reasoning as running the gitleaks CLI instead of gitleaks-action in
+# secret-scan.yml. Do not enable default setup as well: the two conflict.
+
+on:
+  pull_request:
+    branches: [main]
+  # Analysing main too gives the alerts a baseline to compare a PR against, which
+  # is what lets GitHub tell a newly introduced problem from a pre-existing one.
+  push:
+    branches: [main]
+  # CodeQL ships new queries continuously, so code that was clean the day it
+  # merged can turn out to be vulnerable months later. Nothing else in this repo
+  # ever re-examines code that already landed.
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # Needed to publish the findings to the repository's Security tab.
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # javascript-typescript joins this list the day the frontend scaffold
+        # lands. It cannot be added ahead of time: CodeQL fails the run outright
+        # when a configured language has no source files to extract.
+        language: [python]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No autobuild step and no dependency install: Python is analysed straight
+      # from source, and CodeQL resolves what it needs on its own.
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
+        with:
+          category: "/language:${{ matrix.language }}"

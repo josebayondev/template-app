@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: myapp
+    ports:
+      - "5432:5432"
+    # Desde Postgres 18 las imágenes oficiales guardan los datos en un
+    # subdirectorio por versión mayor, así que el montaje va en
+    # /var/lib/postgresql y no en /var/lib/postgresql/data como hasta la 17.
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: local
+      CORS_ORIGINS: http://localhost:5173
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/myapp
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

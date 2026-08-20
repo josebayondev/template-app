@@ -1,0 +1,83 @@
+name: Migrate production database
+
+# Render's pre-deploy command is a paid feature, so migrations run here instead.
+# Applying them from CI keeps them out of application startup, which would race
+# between instances and is ruled out by CLAUDE.md.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/alembic/**"
+      - ".github/workflows/migrate-production.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two migrations at once, and never cancel one halfway through: an
+# interrupted upgrade can leave alembic_version out of step with the schema.
+concurrency:
+  group: migrate-production
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  migrate:
+    name: alembic upgrade head
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.5"
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      # No --extra dev: alembic is a runtime dependency, and this job has no
+      # business installing ruff, mypy or pytest.
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      # A repository generated from this template has no such secret, and its very
+      # first commit touches backend/alembic/**, so this workflow fires and alembic
+      # dies with "Could not parse SQLAlchemy URL from given URL string". There is
+      # nothing to migrate without a database: say so and finish green.
+      #
+      # The check lives in a step rather than in the job's `if:` because the secrets
+      # context is not available at job level.
+      - name: Check for the production database secret
+        id: guard
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PRODUCTION }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::notice::DATABASE_URL_PRODUCTION is not set, skipping migrations."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Show pending migrations
+        if: steps.guard.outputs.configured == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PRODUCTION }}
+        run: |
+          echo "Current revision in production:"
+          uv run alembic current
+          echo "Target revision in this commit:"
+          uv run alembic heads
+
+      - name: Apply migrations
+        if: steps.guard.outputs.configured == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PRODUCTION }}
+        run: uv run alembic upgrade head

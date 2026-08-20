@@ -1,0 +1,44 @@
+version: 2
+updates:
+  # Python dependencies pinned in backend/uv.lock
+  - package-ecosystem: "uv"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    # Only move uv.lock. The ranges in pyproject.toml state what the project is
+    # compatible with, so they should not churn every time a patch ships.
+    versioning-strategy: lockfile-only
+    # Don't adopt a release the day it ships — leaves room for it to be yanked.
+    cooldown:
+      default-days: 7
+    groups:
+      python:
+        patterns: ["*"]
+
+  # Base image digests in backend/Dockerfile
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    ignore:
+      # Python 3.13 -> 3.14 is a semver *minor* bump, so blocking major alone
+      # would not catch it. Moving the runtime is a deliberate change:
+      # .python-version, requires-python, [tool.mypy], [tool.ruff] and the
+      # lockfile all have to move together. Only patch/digest updates here.
+      - dependency-name: "python"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+
+  # Action SHAs in .github/workflows/
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
