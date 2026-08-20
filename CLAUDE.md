@@ -177,8 +177,6 @@ Neon (staging/production).
 Do not propose or add infrastructure beyond this without being asked:
 
 - **No** Redis, message broker, Kubernetes, service workers, or microservices.
-- Resources reachable without a login are addressed by an opaque token
-  (`secrets.token_urlsafe(32)`), never a sequential ID — this prevents IDOR.
 - Migrations with Alembic, applied on deploy — never at application startup.
 - All timestamps stored in **UTC**; convert at the boundary.
 - Backend runs on Render free tier — cold start (~40s) is handled in the UI, not by paying.
