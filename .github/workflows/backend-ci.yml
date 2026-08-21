@@ -187,6 +187,15 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
+      # Not redundant with the migrations job: jobs do not share service containers,
+      # so that job's schema died with it and this one starts on an empty database.
+      # The db-marked tests need the real tables, and building them from the migrations
+      # rather than from Base.metadata.create_all() means the suite runs against the
+      # schema production will actually have -- a migration that drifts from the models
+      # fails here as well as in `alembic check`.
+      - name: Apply migrations
+        run: uv run alembic upgrade head
+
       - name: Run pytest
         run: uv run pytest
 
