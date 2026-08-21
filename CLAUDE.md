@@ -128,8 +128,19 @@ Neon (staging/production).
   poison the browser's HSTS cache for every other local project. It is registered **last**
   in `main.py`, which makes it the outermost middleware, so CORS preflight responses —
   which `CORSMiddleware` answers without reaching the router — carry the headers too.
-- `app/models/` and `app/schemas/` are empty scaffolding for SQLAlchemy models and
-  Pydantic schemas respectively.
+- **Models**: `app/models/base.py` holds `Base`, whose `MetaData` carries a
+  `NAMING_CONVENTION` so every index and constraint gets a deterministic name. This is
+  what makes `alembic check` trustworthy: left to itself Postgres names constraints
+  differently from what SQLAlchemy would emit, and the job reports drift that is not
+  there. It ships already set because it can only be settled while the schema is empty —
+  adding it later means renaming live constraints. The `ck` pattern deliberately forces
+  every `CheckConstraint` to carry `name=`, so a violation reports `ck_<table>_<name>`;
+  an unnamed one fails when you generate the migration, locally rather than in
+  production. `app/models/mixins.py` has `TimestampMixin` (`created_at` / `updated_at`,
+  filled by the database so rows written outside the ORM are stamped too). Every model
+  must be imported in `app/models/__init__.py`: autogenerate only sees imported tables,
+  so one missing from there yields an *empty* migration without complaining.
+  `app/schemas/` is still empty scaffolding for Pydantic schemas.
 - **Testing**: `backend/tests/conftest.py` isolates the suite from the environment before
   anything imports `app.*` — it empties `ENV_FILE`, defaults `DATABASE_URL` to the
   docker-compose Postgres (via `setdefault`, so CI's own value still wins), pins
@@ -139,11 +150,18 @@ Neon (staging/production).
   so no fixture can correct it afterwards — which is why nothing in `conftest.py` imports
   `app.*` at module level. Without it, `uv run pytest` picks up `backend/.env` and runs
   against the Neon dev branch. Fixtures: `db_session` (a session inside a transaction that
-  is rolled back afterwards, so even a `commit()` in the test is undone),
+  is rolled back afterwards, so even a `commit()` in the test is undone, and which starts
+  by emptying every model table — the rollback undoes what the *test* writes, this undoes
+  what was committed before pytest even started, so poking at the dev database by hand
+  cannot quietly break the suite while CI stays green on its fresh Postgres),
   `client`/`running_client` (the real app without/with its lifespan, i.e. without/with a
   database connection) and `clean_env`. Tests needing a live database carry
-  `@pytest.mark.db`. Note `alembic/env.py` still reads `.env` on purpose: you do want
-  `alembic upgrade head` to migrate the database you have configured.
+  `@pytest.mark.db`, and a guard fails them with one readable sentence naming the host and
+  database when the schema has not been migrated, instead of a page of `UndefinedTable`.
+  Note `alembic/env.py` still reads `.env` on purpose: you do want
+  `alembic upgrade head` to migrate the database you have configured — which is also why
+  the `pytest` CI job runs its own `alembic upgrade head`. Jobs do not share service
+  containers, so the schema built by the `migrations` job is gone by the time it starts.
 - **Docker build**: `backend/Dockerfile` is a two-stage build — `builder` installs the
   locked dependencies into a venv at `/opt/venv` (via `uv sync --frozen
   --no-install-project`, so only `pyproject.toml` + `uv.lock` are copied and dependency

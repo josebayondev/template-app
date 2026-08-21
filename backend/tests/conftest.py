@@ -69,10 +69,66 @@ def transactional_session() -> Iterator[Session]:
         connection.close()
 
 
+@pytest.fixture(scope="session")
+def _migrated_schema() -> None:
+    """Turn "you forgot to migrate" into one sentence instead of a page of traceback.
+
+    A db-marked test hitting a table that does not exist fails deep inside psycopg with
+    UndefinedTable, repeated once per test, which buries the one thing worth knowing.
+    Checking the model tables against the database up front says it once, and says what
+    to run about it.
+
+    Compared against Base.metadata rather than against alembic's revision history on
+    purpose: what these tests need is the tables, and that stays true whether the schema
+    is behind, was rolled back, or was pointed at the wrong database entirely.
+
+    The message names the host and database because "run alembic upgrade head" is not by
+    itself enough to act on. There is no backend/.env in the template, so alembic and
+    this suite both reach the same local Postgres -- but the moment you add one, they
+    stop being the same database, and a plain `alembic upgrade head` will migrate the
+    deployed one and leave these tests failing against localhost with no hint that
+    anything moved at all.
+    """
+    from sqlalchemy import inspect
+
+    from app.core.db import engine
+    from app.models import Base
+
+    missing = sorted(set(Base.metadata.tables) - set(inspect(engine).get_table_names()))
+    if missing:
+        # Host and database only. The password is never interpolated into the message.
+        target = f"{engine.url.database} at {engine.url.host}"
+        pytest.fail(
+            f"{target} has no {', '.join(missing)}. Alembic follows backend/.env when you "
+            f"have one, which may be a different database, so migrate this one explicitly:\n"
+            f"  DATABASE_URL={TEST_DATABASE_URL} uv run alembic upgrade head",
+            pytrace=False,
+        )
+
+
 @pytest.fixture
-def db_session() -> Iterator[Session]:
-    """Needs a reachable PostgreSQL; mark the test with @pytest.mark.db."""
+def db_session(_migrated_schema: None) -> Iterator[Session]:
+    """A session on genuinely empty tables. Mark the test with @pytest.mark.db.
+
+    The emptying is not redundant with the rollback. The rollback undoes what the *test*
+    writes; this undoes what was already committed before pytest started -- and that is
+    not hypothetical, because poking at the development database by hand, or running a
+    seed script against it, is a normal thing to do.
+
+    Without this, using the application breaks the suite: a test asserting `.one()` finds
+    the pre-existing row alongside its own, and one asserting a unique constraint passes
+    for the wrong reason, colliding with ambient data instead of with the row it created.
+    CI gets a fresh Postgres every run and would stay green throughout, which is the
+    worst version of the problem.
+
+    The DELETEs run inside the fixture's transaction, so anything committed beforehand is
+    back the moment it rolls back. Reversed order so foreign keys are respected.
+    """
+    from app.models import Base
+
     with transactional_session() as session:
+        for table in reversed(Base.metadata.sorted_tables):
+            session.execute(table.delete())
         yield session
 
 
